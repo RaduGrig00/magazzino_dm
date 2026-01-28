@@ -1,4 +1,3 @@
-from datetime import datetime
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, func
 from config import Base
 
@@ -23,17 +22,7 @@ class Utente(Base):
 
     id = Column(Integer, primary_key=True)
     username = Column(String(255), unique=True, nullable=False)
-    password = Column(String(255), nullable=False)    # hash bcrypt ($2y$)
+    password = Column(String(255), nullable=False)
     email = Column(String(255))
     enabled = Column(Integer, default=1)
     idanagrafica = Column(Integer)
-
-
-class RefreshToken(Base):
-    __tablename__ = "refresh_tokens"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    token = Column(String(255), unique=True, nullable=False, index=True)
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
