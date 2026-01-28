@@ -31,3 +31,13 @@ class ArticoloResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UtenteResponse(BaseModel):
+    id: int
+    username: str
+    email: Optional[str]
+    enabled: Optional[int]
+
+    class Config:
+        from_attributes = True
