@@ -4,12 +4,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from routers.auth import router as auth_router
-from config import db_engine, Base
-import models  # noqa: F401 – registra i modelli
-
-
-# Crea solo la tabella refresh_tokens se non esiste (le altre esistono gia su OSM)
-models.RefreshToken.__table__.create(bind=db_engine, checkfirst=True)
 
 
 @asynccontextmanager

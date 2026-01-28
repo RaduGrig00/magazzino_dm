@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 import os
 from dotenv import load_dotenv
-import uuid
 
 
 load_dotenv()
@@ -23,9 +22,9 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS"))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_token(data: dict, expires_delta: timedelta):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -44,20 +43,17 @@ def login(
     if not user.enabled:
         raise HTTPException(status_code=403, detail="Utente disabilitato")
 
-    # Access token (JWT)
-    access_token = create_access_token({"sub": user.username, "uid": user.id})
-
-    # Refresh token
-    refresh_token = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-    db_refresh = models.RefreshToken(
-        user_id=user.id,
-        token=refresh_token,
-        expires_at=expires_at,
+    # Access token (breve durata)
+    access_token = create_token(
+        {"sub": user.username, "uid": user.id, "type": "access"},
+        timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    db.add(db_refresh)
-    db.commit()
+
+    # Refresh token (lunga durata, anche questo JWT)
+    refresh_token = create_token(
+        {"sub": user.username, "uid": user.id, "type": "refresh"},
+        timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    )
 
     response = JSONResponse(content={"message": "Login effettuato"})
     response.set_cookie(
@@ -82,6 +78,8 @@ def get_current_user(
 
     try:
         payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Token non valido")
         username: str | None = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Token non valido")
@@ -101,26 +99,33 @@ def read_me(current_user: models.Utente = Depends(get_current_user)):
 
 
 @router.post("/refresh")
-def refresh_token(
+def refresh(
     refresh_token: str = Cookie(None),
     db: Session = Depends(get_db),
 ):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token mancante")
 
-    db_token = (
-        db.query(models.RefreshToken)
-        .filter(models.RefreshToken.token == refresh_token)
-        .first()
-    )
-    if not db_token or db_token.expires_at < datetime.now(timezone.utc):
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Token non valido")
+        username: str | None = payload.get("sub")
+        user_id: int | None = payload.get("uid")
+        if not username or not user_id:
+            raise HTTPException(status_code=401, detail="Token non valido")
+    except JWTError:
         raise HTTPException(status_code=401, detail="Refresh token non valido o scaduto")
 
-    user = db.query(models.Utente).filter(models.Utente.id == db_token.user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Utente non trovato")
+    # Verifica che l'utente esista ancora ed sia abilitato
+    user = db.query(models.Utente).filter(models.Utente.id == user_id).first()
+    if not user or not user.enabled:
+        raise HTTPException(status_code=401, detail="Utente non trovato o disabilitato")
 
-    new_access_token = create_access_token({"sub": user.username, "uid": user.id})
+    new_access_token = create_token(
+        {"sub": user.username, "uid": user.id, "type": "access"},
+        timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
 
     response = JSONResponse(content={"message": "Token rinnovato"})
     response.set_cookie(
@@ -132,16 +137,7 @@ def refresh_token(
 
 
 @router.post("/logout")
-def logout(
-    refresh_token: str = Cookie(None),
-    db: Session = Depends(get_db),
-):
-    if refresh_token:
-        db.query(models.RefreshToken).filter(
-            models.RefreshToken.token == refresh_token
-        ).delete()
-        db.commit()
-
+def logout():
     response = JSONResponse(content={"message": "Logout effettuato"})
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
