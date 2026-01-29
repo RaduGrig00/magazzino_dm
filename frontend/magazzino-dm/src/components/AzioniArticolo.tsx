@@ -37,7 +37,7 @@ const AZIONI_CONFIG: Record<Exclude<TipoAzione, "intervento">, { label: string; 
   scarico: { label: "Scarica", movimento: "Scarico Manuale" },
 };
 
-const QTA_MIN = 0.001;
+const QTA_MIN = 1;
 const QTA_MAX = 99999;
 
 // === VALIDATION ===

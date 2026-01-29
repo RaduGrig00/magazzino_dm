@@ -10,6 +10,8 @@ class Articolo(Base):
     id = Column(Integer, primary_key=True, index=True)
     codice = Column(String(50), unique=True, nullable=False, index=True)
     descrizione = Column(String(255))
+    qta = Column(Numeric(15, 6), nullable=False)
+    threshold_qta = Column(Numeric(15, 6), nullable=False)
     prezzo_acquisto = Column(Float)
     prezzo_vendita = Column(Float)
     barcode = Column(String(50))
@@ -50,19 +52,7 @@ class Movimento(Base):
     reference_type = Column(String(255), nullable=True)
     idutente = Column(Integer, nullable=True)
     articolo = relationship("Articolo", back_populates="movimenti")
-
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    DateTime,
-    Text,
-    Numeric,
-    TIMESTAMP,
-    ForeignKey,
-    text
-)
-from sqlalchemy.sql import func
+    intervento = relationship("Intervento", back_populates="movimenti")
 
 
 class Intervento(Base):
@@ -76,7 +66,7 @@ class Intervento(Base):
     km = Column(Numeric(7, 2), nullable=False)
     idtipointervento = Column(Integer, nullable=False, index=True)
     nomefile = Column(String(255), nullable=False)
-    idanagrafica = Column(Integer, nullable=False, index=True)
+    idanagrafica = Column(Integer, ForeignKey("an_anagrafiche.idanagrafica", ondelete="CASCADE"), nullable=False, index=True)
     idreferente = Column(Integer, nullable=False)
     idagente = Column(Integer, nullable=False)
     idstatointervento = Column(Integer, nullable=False, index=True)
@@ -112,6 +102,21 @@ class Intervento(Base):
     id_ordine = Column(Integer, nullable=True, index=True)
     numfatturazione = Column(Text, nullable=True)
     id_segment = Column(Integer, nullable=False)
+    movimenti = relationship(
+        "Movimento",
+        back_populates="intervento",
+        cascade="all, delete-orphan"
+    )
+    cliente = relationship("Cliente", back_populates="interventi")
+
+
+class Cliente(Base):
+    __tablename__ ="an_anagrafiche"
+
+    idanagrafica = Column(Integer, primary_key=True, index=True)
+    ragione_sociale = Column(String(255), nullable=False)
+
+    interventi = relationship("Interevento", back_populates="cliente", cascade="all, delete-orphan")
 
 
 class Utente(Base):
