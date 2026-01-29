@@ -147,6 +147,9 @@ class InterventoResponse(BaseModel):
     updated_at: Optional[datetime]
     deleted_at: Optional[datetime]
 
+    # Ragione sociale del cliente (from join)
+    ragione_sociale: Optional[str] = None
+
     class Config:
         from_attributes = True
 

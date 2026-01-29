@@ -13,3 +13,13 @@ export interface Articolo {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface Intervento {
+  id: number;
+  codice: string;
+  data_richiesta?: string;
+  richiesta?: string;
+  descrizione?: string;
+  idanagrafica: number;
+  ragione_sociale?: string;
+}
