@@ -1,6 +1,6 @@
 import { apiFetch } from "../utils/auth";
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import logo from "@/assets/logo_completo.png";
 import { Button } from "../components/ui/button";
@@ -59,7 +59,7 @@ export default function Login() {
         {/* Logo Header */}
         <div className="flex flex-col items-center justify-center py-8 bg-gradient-to-b from-muted to-card border-b border-border">
           <img src={logo} alt="Logo" className="h-16 mb-3" />
-          <p className="text-sm text-muted-foreground">Gestione Consumabili</p>
+          <p className="text-sm text-muted-foreground">Magazzino DM</p>
         </div>
 
         {/* Form */}
@@ -124,13 +124,6 @@ export default function Login() {
           >
             {isLoading ? "Accesso in corso..." : "Accedi"}
           </Button>
-
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Non hai un account?{" "}
-            <Link to="/signup" className="text-primary hover:text-primary-700 font-medium hover:underline transition-colors">
-              Registrati
-            </Link>
-          </p>
         </div>
       </form>
     </div>
