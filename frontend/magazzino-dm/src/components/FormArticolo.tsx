@@ -88,11 +88,19 @@ export default function FormArticolo() {
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Codice:</dt>
-              <dd className="font-medium">{articolo.barcode}</dd>
+              <dd className="font-medium">{articolo.codice}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Descrizione:</dt>
               <dd className="font-medium">{articolo.descrizione}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">Quantità a magazzino:</dt>
+              <dd className="font-medium">{Math.trunc(articolo.qta)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">Soglia minima:</dt>
+              <dd className="font-medium">{Math.trunc(articolo.threshold_qta)}</dd>
             </div>
           </dl>
 

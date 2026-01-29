@@ -7,6 +7,8 @@ from uuid import UUID
 class ArticoloCreate(BaseModel):
     codice: str
     descrizione: Optional[str] = None
+    qta: Optional[Decimal] = None
+    threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float] = None
     prezzo_vendita: Optional[float] = None
     barcode: Optional[str] = None
@@ -14,6 +16,8 @@ class ArticoloCreate(BaseModel):
 
 class ArticoloUpdate(BaseModel):
     descrizione: Optional[str] = None
+    qta: Optional[Decimal] = None
+    threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float] = None
     prezzo_vendita: Optional[float] = None
     barcode: Optional[str] = None
@@ -23,6 +27,8 @@ class ArticoloResponse(BaseModel):
     id: int
     codice: str
     descrizione: Optional[str]
+    qta: Optional[Decimal] = None
+    threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float]
     prezzo_vendita: Optional[float]
     barcode: Optional[str]
@@ -140,6 +146,13 @@ class InterventoResponse(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     deleted_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+class ClienteResponse(BaseModel):
+    idanagrafica: int
+    ragione_sociale: str
 
     class Config:
         from_attributes = True

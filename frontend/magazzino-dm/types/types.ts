@@ -2,6 +2,8 @@ export interface Articolo {
   id: number;
   codice: string;
   descrizione?: string;
+  qta: number;
+  threshold_qta: number;
   prezzo_acquisto?: number;
   prezzo_vendita?: number;
   marca?: string;
