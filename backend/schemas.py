@@ -89,3 +89,57 @@ class MovimentoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InterventoResponse(BaseModel):
+    id: int
+    codice: str
+
+    data_richiesta: Optional[datetime]
+    richiesta: Optional[str]
+    descrizione: Optional[str]
+
+    km: Decimal
+
+    idtipointervento: int
+    nomefile: str
+    idanagrafica: int
+    idreferente: int
+    idagente: int
+    idstatointervento: int
+
+    informazioniaggiuntive: Optional[str]
+
+    prezzo_ore_unitario: Decimal
+
+    idsede_partenza: int
+    idsede_destinazione: int
+    idclientefinale: int
+
+    info_sede: str
+
+    firma_file: str
+    firma_data: Optional[datetime]
+    firma_nome: str
+
+    data_invio: Optional[datetime]
+    data_scadenza: Optional[datetime]
+
+    codice_cig: Optional[str]
+    codice_cup: Optional[str]
+    id_documento_fe: Optional[str]
+    num_item: Optional[str]
+
+    id_preventivo: Optional[int]
+    id_contratto: Optional[int]
+    id_ordine: Optional[int]
+
+    numfatturazione: Optional[str]
+    id_segment: int
+
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    deleted_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
