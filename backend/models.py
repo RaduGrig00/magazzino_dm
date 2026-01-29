@@ -1,4 +1,6 @@
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import TIMESTAMP, Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func, text
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from config import Base
 
 
@@ -14,7 +16,40 @@ class Articolo(Base):
     note = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True))
+    movimenti = relationship(
+        "Movimento",
+        back_populates="articolo",
+        cascade="all, delete-orphan"
+    )
 
+class Movimento(Base):
+    __tablename__ = "mg_movimenti"
+
+    id = Column(Integer, primary_key=True, index=True)
+    idarticolo = Column(Integer, ForeignKey("mg_articoli.id", ondelete="CASCADE"), nullable=False)
+    qta = Column(Numeric(15, 6), nullable=False)
+    movimento = Column(String(255), nullable=False)
+    data = Column(Date, nullable=True)
+    manuale = Column(Boolean, nullable=False, default=False)
+    idintervento = Column(Integer, ForeignKey("in_interventi.id", ondelete="CASCADE"), nullable=False)
+    idddt = Column(Integer, nullable=False) #da prendere probabilmente tramite api su osm
+    iddocumento = Column(Integer, nullable=False)
+    idsede = Column(Integer, nullable=False)
+    created_at = Column(
+        TIMESTAMP,
+        nullable=True,
+        server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at = Column(
+        TIMESTAMP,
+        nullable=True,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=func.current_timestamp()
+    )
+    reference_id = Column(Integer, nullable=True)
+    reference_type = Column(String(255), nullable=True)
+    idutente = Column(Integer, nullable=True)
+    articolo = relationship("Articolo", back_populates="movimenti")
 
 class Utente(Base):
     """Mappatura sulla tabella zz_users di OpenSTAManager."""

@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from routers.auth import router as auth_router
+from routers.articoli import router as articoli_router
 
 
 @asynccontextmanager
@@ -63,3 +64,4 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 app.include_router(auth_router)
+app.include_router(articoli_router)
