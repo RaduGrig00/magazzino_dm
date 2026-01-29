@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import { apiFetch } from "../utils/auth";
 import type { Articolo, Intervento } from "../../types/types";
+import { FiPlus, FiMinus, FiTool, FiX, FiCalendar, FiUser, FiCheck, FiAlertCircle } from "react-icons/fi";
 
 // === TYPES ===
 type TipoAzione = "carico" | "scarico" | "intervento";
@@ -311,29 +312,47 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     // Per intervento, mostra il form solo se è stato selezionato un intervento
     if (azioneSelezionata === "intervento" && !interventoSelezionato) return null;
 
+    const isCarico = azioneSelezionata === "carico";
     const label =
       azioneSelezionata === "intervento"
-        ? `Scarico per intervento ${interventoSelezionato?.codice}`
+        ? `Scarico per intervento #${interventoSelezionato?.codice}`
         : AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento">].label + " articolo";
 
     return (
-      <div className="p-4 bg-muted/50 rounded-lg border border-border space-y-3 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">{label}</span>
+      <div className={`p-4 rounded-xl border animate-fade-in ${
+        isCarico ? "bg-brand-50 border-brand-200" : "bg-red-50 border-red-200"
+      }`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            {isCarico ? (
+              <FiPlus className="w-4 h-4 text-brand-600" />
+            ) : (
+              <FiMinus className="w-4 h-4 text-red-600" />
+            )}
+            <span className={`text-sm font-semibold ${isCarico ? "text-brand-700" : "text-red-700"}`}>
+              {label}
+            </span>
+          </div>
           <button
             type="button"
             onClick={resetForm}
-            className="text-muted-foreground hover:text-foreground transition-colors text-sm"
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-white/50"
             aria-label="Annulla"
           >
-            Annulla
+            <FiX className="w-4 h-4" />
           </button>
         </div>
 
         {azioneSelezionata === "intervento" && interventoSelezionato && (
-          <div className="text-xs text-muted-foreground">
-            Cliente: {interventoSelezionato.ragione_sociale || "N/D"} -{" "}
-            {formatDataIntervento(interventoSelezionato.data_richiesta)}
+          <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3 pb-3 border-b border-red-200">
+            <span className="flex items-center gap-1">
+              <FiUser className="w-3 h-3" />
+              {interventoSelezionato.ragione_sociale || "N/D"}
+            </span>
+            <span className="flex items-center gap-1">
+              <FiCalendar className="w-3 h-3" />
+              {formatDataIntervento(interventoSelezionato.data_richiesta)}
+            </span>
           </div>
         )}
 
@@ -349,17 +368,21 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
               placeholder="Quantità"
               aria-label="Quantità"
               aria-invalid={!!erroreQuantita}
-              className={`w-full px-3 py-2 border rounded-lg text-sm bg-background
-                focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:border-primary
-                transition-all duration-200 outline-none
-                ${erroreQuantita ? "border-destructive" : "border-input"}`}
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm bg-white
+                focus:ring-2 focus:ring-offset-1 transition-all duration-200 outline-none
+                ${erroreQuantita
+                  ? "border-destructive focus:ring-red-200"
+                  : isCarico
+                    ? "border-brand-200 focus:ring-brand-200 focus:border-brand-400"
+                    : "border-red-200 focus:ring-red-200 focus:border-red-400"
+                }`}
             />
             {erroreQuantita && <p className="mt-1 text-xs text-destructive">{erroreQuantita}</p>}
           </div>
 
           <Button
             type="button"
-            variant={azioneSelezionata === "carico" ? "success" : "destructive"}
+            variant={isCarico ? "success" : "destructive"}
             size="default"
             onClick={handleConferma}
             loading={isLoading}
@@ -378,34 +401,46 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={() => setShowModalInterventi(false)}
       >
         <div
-          className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4"
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col m-4 animate-slide-up"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h2 className="text-lg font-semibold">Seleziona Intervento</h2>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-neutral-50 rounded-t-2xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-brand-100 rounded-lg flex items-center justify-center">
+                <FiTool className="w-5 h-5 text-brand-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Seleziona Intervento</h2>
+                <p className="text-xs text-muted-foreground">Ultimi 25 interventi</p>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => setShowModalInterventi(false)}
-              className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none"
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors"
               aria-label="Chiudi"
             >
-              &times;
+              <FiX className="w-5 h-5" />
             </button>
           </div>
 
           {/* Content */}
           <div className="flex-1 overflow-auto p-4">
             {loadingInterventi ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-brand-200 border-t-brand-600"></div>
+                <p className="mt-3 text-sm text-muted-foreground">Caricamento interventi...</p>
               </div>
             ) : interventi.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Nessun intervento trovato</div>
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <FiTool className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-sm">Nessun intervento trovato</p>
+              </div>
             ) : (
               <div className="space-y-2">
                 {interventi.map((intervento) => (
@@ -413,24 +448,38 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
                     key={intervento.id}
                     type="button"
                     onClick={() => handleSelectIntervento(intervento)}
-                    className="w-full p-3 text-left border border-border rounded-lg hover:bg-accent hover:border-primary transition-colors"
+                    className="w-full p-4 text-left bg-white border border-border rounded-xl
+                      hover:bg-brand-50 hover:border-brand-300
+                      focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400
+                      transition-all duration-200 group"
                   >
                     <div className="flex justify-between items-start">
-                      <div>
-                        <span className="font-medium">#{intervento.codice}</span>
-                        <span className="text-muted-foreground ml-2">
-                          {formatDataIntervento(intervento.data_richiesta)}
-                        </span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground group-hover:text-brand-700">
+                            #{intervento.codice}
+                          </span>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <FiCalendar className="w-3 h-3" />
+                            {formatDataIntervento(intervento.data_richiesta)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+                          <FiUser className="w-3.5 h-3.5" />
+                          {intervento.ragione_sociale || "Cliente non disponibile"}
+                        </div>
+                        {intervento.descrizione && (
+                          <p className="text-xs text-muted-foreground mt-2 line-clamp-1">
+                            {intervento.descrizione}
+                          </p>
+                        )}
+                      </div>
+                      <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-8 h-8 bg-brand-100 rounded-lg flex items-center justify-center">
+                          <FiCheck className="w-4 h-4 text-brand-600" />
+                        </div>
                       </div>
                     </div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {intervento.ragione_sociale || "Cliente non disponibile"}
-                    </div>
-                    {intervento.descrizione && (
-                      <div className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                        {intervento.descrizione}
-                      </div>
-                    )}
                   </button>
                 ))}
               </div>
@@ -438,7 +487,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-border">
+          <div className="px-6 py-4 border-t border-border bg-neutral-50 rounded-b-2xl">
             <Button type="button" variant="outline" onClick={() => setShowModalInterventi(false)} className="w-full">
               Annulla
             </Button>
@@ -449,21 +498,47 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <h3 className="text-sm font-medium text-muted-foreground">Azioni</h3>
+    <div className="space-y-4">
+      {/* Section title */}
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-border"></div>
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Azioni</span>
+        <div className="h-px flex-1 bg-border"></div>
+      </div>
 
       {/* Pulsanti azione */}
       {!azioneSelezionata && (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="success" size="sm" onClick={() => handleSelectAzione("carico")}>
-            Carica Articolo
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Button
+            type="button"
+            variant="success"
+            size="default"
+            onClick={() => handleSelectAzione("carico")}
+            className="w-full"
+            leftIcon={<FiPlus className="w-4 h-4" />}
+          >
+            Carico
           </Button>
 
-          <Button type="button" variant="destructive" size="sm" onClick={() => handleSelectAzione("scarico")}>
+          <Button
+            type="button"
+            variant="destructive"
+            size="default"
+            onClick={() => handleSelectAzione("scarico")}
+            className="w-full"
+            leftIcon={<FiMinus className="w-4 h-4" />}
+          >
             Scarico Manuale
           </Button>
 
-          <Button type="button" variant="outline" size="sm" onClick={() => handleSelectAzione("intervento")}>
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            onClick={() => handleSelectAzione("intervento")}
+            className="w-full"
+            leftIcon={<FiTool className="w-4 h-4" />}
+          >
             Scarico Intervento
           </Button>
         </div>
@@ -479,13 +554,18 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       {messaggio && (
         <div
           role="alert"
-          className={`p-3 rounded-lg text-sm animate-fade-in ${
+          className={`p-4 rounded-xl text-sm animate-fade-in flex items-start gap-3 ${
             messaggio.tipo === "success"
-              ? "bg-green-50 border border-green-200 text-green-700"
+              ? "bg-brand-50 border border-brand-200 text-brand-700"
               : "bg-destructive-muted border border-red-200 text-destructive"
           }`}
         >
-          {messaggio.testo}
+          {messaggio.tipo === "success" ? (
+            <FiCheck className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <FiAlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
+          <span className="font-medium">{messaggio.testo}</span>
         </div>
       )}
     </div>
