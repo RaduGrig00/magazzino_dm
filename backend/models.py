@@ -116,7 +116,7 @@ class Cliente(Base):
     idanagrafica = Column(Integer, primary_key=True, index=True)
     ragione_sociale = Column(String(255), nullable=False)
 
-    interventi = relationship("Interevento", back_populates="cliente", cascade="all, delete-orphan")
+    interventi = relationship("Intervento", back_populates="cliente", cascade="all, delete-orphan")
 
 
 class Utente(Base):
