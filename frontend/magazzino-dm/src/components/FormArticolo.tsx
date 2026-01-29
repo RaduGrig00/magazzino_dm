@@ -3,6 +3,7 @@ import { useState } from "react";
 import { apiFetch } from "../utils/auth";
 import type { Articolo } from "../../types/types.ts";
 import AzioniArticolo from "./AzioniArticolo";
+import { FiSearch, FiBox, FiAlertTriangle, FiCheckCircle } from "react-icons/fi";
 
 export default function FormArticolo() {
   const [articolo, setArticolo] = useState<Articolo | null>(null);
@@ -37,74 +38,135 @@ export default function FormArticolo() {
     }
   };
 
+  const getQuantityStatus = (qta: number, threshold: number) => {
+    if (qta <= 0) return { status: "critical", label: "Esaurito", icon: FiAlertTriangle };
+    if (qta <= threshold) return { status: "warning", label: "Sotto soglia", icon: FiAlertTriangle };
+    return { status: "ok", label: "Disponibile", icon: FiCheckCircle };
+  };
+
   return (
-    <div>
-      <form
-        onSubmit={handleSearch}
-        className="relative bg-card w-full max-w-md mx-auto rounded-2xl shadow-xl border border-border overflow-hidden animate-fade-in"
-      >
-        {/* Form */}
-        <div className="p-8">
-          <div className="space-y-4">
-            {/* Codice */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Inserisci codice articolo"
-                value={codice}
-                onChange={(e) => setCodice(e.target.value)}
-                className="w-full px-4 py-3 border border-input rounded-xl text-sm bg-background placeholder:text-muted-foreground
-                      hover:border-border-focus
-                      focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:border-primary focus:bg-card
-                      transition-all duration-200 outline-none"
-                required
-              />
+    <div className="space-y-6">
+      {/* Search Form */}
+      <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden animate-fade-in">
+        <div className="p-6">
+          <form onSubmit={handleSearch}>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                  <FiSearch className="w-5 h-5" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Inserisci codice articolo o barcode..."
+                  value={codice}
+                  onChange={(e) => setCodice(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3.5 border border-input rounded-xl text-sm bg-background placeholder:text-muted-foreground
+                    hover:border-border-focus
+                    focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:border-primary focus:bg-card
+                    transition-all duration-200 outline-none"
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={isLoading}
+                loading={isLoading}
+                size="lg"
+                className="sm:w-auto w-full"
+              >
+                {isLoading ? "Ricerca..." : "Cerca"}
+              </Button>
+            </div>
+          </form>
+
+          {error && (
+            <div className="mt-4 p-4 bg-destructive-muted border border-red-200 rounded-xl animate-fade-in">
+              <div className="flex items-center gap-3">
+                <FiAlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
+                <p className="text-destructive text-sm font-medium">{error}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Article Result */}
+      {articolo && (
+        <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden animate-slide-up">
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-border bg-neutral-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-100 rounded-lg flex items-center justify-center">
+                  <FiBox className="w-5 h-5 text-brand-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">{articolo.codice}</h3>
+                  <p className="text-sm text-muted-foreground">{articolo.descrizione || "Nessuna descrizione"}</p>
+                </div>
+              </div>
+              {(() => {
+                const status = getQuantityStatus(articolo.qta, articolo.threshold_qta);
+                const StatusIcon = status.icon;
+                return (
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium
+                    ${status.status === "critical" ? "badge-critical" : ""}
+                    ${status.status === "warning" ? "badge-low" : ""}
+                    ${status.status === "ok" ? "badge-ok" : ""}
+                  `}>
+                    <StatusIcon className="w-3.5 h-3.5" />
+                    {status.label}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
-          {error && (
-            <div className="mt-4 p-3 bg-destructive-muted border border-red-200 rounded-lg animate-fade-in">
-              <p className="text-destructive text-sm">{error}</p>
+          {/* Body */}
+          <div className="p-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="p-4 bg-neutral-50 rounded-xl">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                  Quantità disponibile
+                </p>
+                <p className={`text-2xl font-bold ${
+                  articolo.qta <= articolo.threshold_qta ? "text-amber-600" : "text-brand-600"
+                }`}>
+                  {Math.trunc(articolo.qta)}
+                </p>
+              </div>
+              <div className="p-4 bg-neutral-50 rounded-xl">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                  Soglia minima
+                </p>
+                <p className="text-2xl font-bold text-foreground">
+                  {Math.trunc(articolo.threshold_qta)}
+                </p>
+              </div>
             </div>
-          )}
 
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="w-full mt-6"
-            size="lg"
-          >
-            {isLoading ? "Ricerca in corso..." : "Cerca Articolo"}
-          </Button>
-        </div>
-      </form>
+            {/* Additional Info */}
+            {(articolo.barcode || articolo.note) && (
+              <div className="space-y-3 mb-6 p-4 bg-neutral-50 rounded-xl">
+                {articolo.barcode && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Barcode</span>
+                    <span className="font-mono font-medium">{articolo.barcode}</span>
+                  </div>
+                )}
+                {articolo.note && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground block mb-1">Note</span>
+                    <span className="text-foreground">{articolo.note}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
-      {/* Risultato ricerca */}
-      {articolo && (
-        <div className="mt-6 max-w-md mx-auto bg-card rounded-2xl shadow-lg border border-border p-6 animate-fade-in">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            Articolo trovato
-          </h2>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Codice:</dt>
-              <dd className="font-medium">{articolo.codice}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Descrizione:</dt>
-              <dd className="font-medium">{articolo.descrizione}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Quantità a magazzino:</dt>
-              <dd className="font-medium">{Math.trunc(articolo.qta)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Soglia minima:</dt>
-              <dd className="font-medium">{Math.trunc(articolo.threshold_qta)}</dd>
-            </div>
-          </dl>
-
-          <AzioniArticolo articolo={articolo} />
+            {/* Actions */}
+            <AzioniArticolo articolo={articolo} />
+          </div>
         </div>
       )}
     </div>
