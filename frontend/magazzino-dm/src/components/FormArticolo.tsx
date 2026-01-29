@@ -2,6 +2,7 @@ import { Button } from "../components/ui/button";
 import { useState } from "react";
 import { apiFetch } from "../utils/auth";
 import type { Articolo } from "../../types/types.ts";
+import AzioniArticolo from "./AzioniArticolo";
 
 export default function FormArticolo() {
   const [articolo, setArticolo] = useState<Articolo | null>(null);
@@ -94,6 +95,8 @@ export default function FormArticolo() {
               <dd className="font-medium">{articolo.descrizione}</dd>
             </div>
           </dl>
+
+          <AzioniArticolo articolo={articolo} />
         </div>
       )}
     </div>
