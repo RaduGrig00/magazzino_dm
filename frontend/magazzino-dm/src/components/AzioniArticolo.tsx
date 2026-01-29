@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import { apiFetch } from "../utils/auth";
-import type { Articolo } from "../../types/types";
+import type { Articolo, Intervento } from "../../types/types";
 
 // === TYPES ===
 type TipoAzione = "carico" | "scarico" | "intervento";
@@ -69,7 +69,8 @@ const buildPayload = (
   articoloId: number,
   qta: number,
   tipoMovimento: string,
-  isCarico: boolean
+  isCarico: boolean,
+  intervento?: Intervento | null
 ): MovimentoPayload => {
   const oggi = new Date().toISOString().split("T")[0];
   const qtaFinale = isCarico ? Math.abs(qta) : -Math.abs(qta);
@@ -79,15 +80,25 @@ const buildPayload = (
     qta: qtaFinale,
     movimento: tipoMovimento,
     data: oggi,
-    manuale: true,
-    idintervento: null,
+    manuale: !intervento,
+    idintervento: intervento?.id ?? null,
     idddt: 0,
     iddocumento: 0,
     idsede: 0,
-    reference_id: null,
-    reference_type: null,
+    reference_id: intervento?.id ?? null,
+    reference_type: intervento ? "Modules\\Interventi\\Intervento" : null,
     idutente: null,
   };
+};
+
+const formatDataIntervento = (dataStr?: string): string => {
+  if (!dataStr) return "";
+  const data = new Date(dataStr);
+  return data.toLocaleDateString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 };
 
 // === COMPONENT ===
@@ -98,16 +109,30 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   const [isLoading, setIsLoading] = useState(false);
   const [messaggio, setMessaggio] = useState<Messaggio | null>(null);
 
+  // Stato per il modal interventi
+  const [showModalInterventi, setShowModalInterventi] = useState(false);
+  const [interventi, setInterventi] = useState<Intervento[]>([]);
+  const [loadingInterventi, setLoadingInterventi] = useState(false);
+  const [interventoSelezionato, setInterventoSelezionato] = useState<Intervento | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Focus input quando si seleziona un'azione
+  // Focus input quando si seleziona un'azione (non intervento modal)
   useEffect(() => {
     if (azioneSelezionata && azioneSelezionata !== "intervento") {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
   }, [azioneSelezionata]);
+
+  // Focus input quando si seleziona un intervento
+  useEffect(() => {
+    if (interventoSelezionato && azioneSelezionata === "intervento") {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [interventoSelezionato, azioneSelezionata]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -121,16 +146,50 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     setQuantita("1");
     setErroreQuantita(null);
     setMessaggio(null);
+    setInterventoSelezionato(null);
+    setShowModalInterventi(false);
   }, []);
 
-  const handleSelectAzione = useCallback((azione: TipoAzione) => {
-    if (azione === "intervento") {
-      setMessaggio({ tipo: "error", testo: "Funzionalità in sviluppo" });
-      return;
+  const caricaInterventi = useCallback(async () => {
+    setLoadingInterventi(true);
+    try {
+      const res = await apiFetch("/interventi/");
+      if (!res.ok) {
+        throw new Error("Errore nel caricamento degli interventi");
+      }
+      const data = await res.json();
+      setInterventi(data);
+    } catch (err) {
+      setMessaggio({
+        tipo: "error",
+        testo: err instanceof Error ? err.message : "Errore nel caricamento degli interventi",
+      });
+      setShowModalInterventi(false);
+    } finally {
+      setLoadingInterventi(false);
     }
-    setMessaggio(null);
-    setErroreQuantita(null);
-    setAzioneSelezionata(azione);
+  }, []);
+
+  const handleSelectAzione = useCallback(
+    (azione: TipoAzione) => {
+      setMessaggio(null);
+      setErroreQuantita(null);
+
+      if (azione === "intervento") {
+        setShowModalInterventi(true);
+        caricaInterventi();
+        return;
+      }
+
+      setAzioneSelezionata(azione);
+    },
+    [caricaInterventi]
+  );
+
+  const handleSelectIntervento = useCallback((intervento: Intervento) => {
+    setInterventoSelezionato(intervento);
+    setShowModalInterventi(false);
+    setAzioneSelezionata("intervento");
   }, []);
 
   const handleQuantitaChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,7 +202,13 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   }, []);
 
   const handleConferma = useCallback(async () => {
-    if (!azioneSelezionata || azioneSelezionata === "intervento") return;
+    if (!azioneSelezionata) return;
+
+    // Per azione intervento, verifica che sia stato selezionato un intervento
+    if (azioneSelezionata === "intervento" && !interventoSelezionato) {
+      setMessaggio({ tipo: "error", testo: "Seleziona un intervento" });
+      return;
+    }
 
     // Validazione quantità
     const validation = validateQuantita(quantita);
@@ -159,9 +224,27 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       return;
     }
 
-    const config = AZIONI_CONFIG[azioneSelezionata];
-    const isCarico = azioneSelezionata === "carico";
-    const payload = buildPayload(articolo.id, validation.parsed, config.movimento, isCarico);
+    let tipoMovimento: string;
+    let isCarico = false;
+
+    if (azioneSelezionata === "intervento" && interventoSelezionato) {
+      // Scarico magazzino - Rif. attività num. {codice} del {data}
+      const dataFormattata = formatDataIntervento(interventoSelezionato.data_richiesta);
+      tipoMovimento = `Scarico magazzino - Rif. attività num. ${interventoSelezionato.codice} del ${dataFormattata}`;
+      isCarico = false; // Scarico
+    } else {
+      const config = AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento">];
+      tipoMovimento = config.movimento;
+      isCarico = azioneSelezionata === "carico";
+    }
+
+    const payload = buildPayload(
+      articolo.id,
+      validation.parsed,
+      tipoMovimento,
+      isCarico,
+      azioneSelezionata === "intervento" ? interventoSelezionato : null
+    );
 
     setIsLoading(true);
     setMessaggio(null);
@@ -183,12 +266,18 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       }
 
       const qtaLabel = validation.parsed === 1 ? "unità" : "unità";
+      const successMessage =
+        azioneSelezionata === "intervento" && interventoSelezionato
+          ? `Scarico di ${validation.parsed} ${qtaLabel} per intervento ${interventoSelezionato.codice} eseguito`
+          : `${tipoMovimento} di ${validation.parsed} ${qtaLabel} eseguito con successo`;
+
       setMessaggio({
         tipo: "success",
-        testo: `${config.movimento} di ${validation.parsed} ${qtaLabel} eseguito con successo`,
+        testo: successMessage,
       });
       setAzioneSelezionata(null);
       setQuantita("1");
+      setInterventoSelezionato(null);
       onMovimentoCreato?.();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -201,7 +290,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     } finally {
       setIsLoading(false);
     }
-  }, [azioneSelezionata, quantita, articolo, onMovimentoCreato]);
+  }, [azioneSelezionata, quantita, articolo, onMovimentoCreato, interventoSelezionato]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -217,14 +306,20 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
   // Render form quantità
   const renderFormQuantita = () => {
-    if (!azioneSelezionata || azioneSelezionata === "intervento") return null;
+    if (!azioneSelezionata) return null;
 
-    const config = AZIONI_CONFIG[azioneSelezionata];
+    // Per intervento, mostra il form solo se è stato selezionato un intervento
+    if (azioneSelezionata === "intervento" && !interventoSelezionato) return null;
+
+    const label =
+      azioneSelezionata === "intervento"
+        ? `Scarico per intervento ${interventoSelezionato?.codice}`
+        : AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento">].label + " articolo";
 
     return (
       <div className="p-4 bg-muted/50 rounded-lg border border-border space-y-3 animate-fade-in">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">{config.label} articolo</span>
+          <span className="text-sm font-medium">{label}</span>
           <button
             type="button"
             onClick={resetForm}
@@ -234,6 +329,13 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
             Annulla
           </button>
         </div>
+
+        {azioneSelezionata === "intervento" && interventoSelezionato && (
+          <div className="text-xs text-muted-foreground">
+            Cliente: {interventoSelezionato.ragione_sociale || "N/D"} -{" "}
+            {formatDataIntervento(interventoSelezionato.data_richiesta)}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <div className="flex-1">
@@ -252,9 +354,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
                 transition-all duration-200 outline-none
                 ${erroreQuantita ? "border-destructive" : "border-input"}`}
             />
-            {erroreQuantita && (
-              <p className="mt-1 text-xs text-destructive">{erroreQuantita}</p>
-            )}
+            {erroreQuantita && <p className="mt-1 text-xs text-destructive">{erroreQuantita}</p>}
           </div>
 
           <Button
@@ -272,6 +372,82 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     );
   };
 
+  // Render modal interventi
+  const renderModalInterventi = () => {
+    if (!showModalInterventi) return null;
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        onClick={() => setShowModalInterventi(false)}
+      >
+        <div
+          className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <h2 className="text-lg font-semibold">Seleziona Intervento</h2>
+            <button
+              type="button"
+              onClick={() => setShowModalInterventi(false)}
+              className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none"
+              aria-label="Chiudi"
+            >
+              &times;
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-auto p-4">
+            {loadingInterventi ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : interventi.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Nessun intervento trovato</div>
+            ) : (
+              <div className="space-y-2">
+                {interventi.map((intervento) => (
+                  <button
+                    key={intervento.id}
+                    type="button"
+                    onClick={() => handleSelectIntervento(intervento)}
+                    className="w-full p-3 text-left border border-border rounded-lg hover:bg-accent hover:border-primary transition-colors"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-medium">#{intervento.codice}</span>
+                        <span className="text-muted-foreground ml-2">
+                          {formatDataIntervento(intervento.data_richiesta)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {intervento.ragione_sociale || "Cliente non disponibile"}
+                    </div>
+                    {intervento.descrizione && (
+                      <div className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                        {intervento.descrizione}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-border">
+            <Button type="button" variant="outline" onClick={() => setShowModalInterventi(false)} className="w-full">
+              Annulla
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mt-4 space-y-4">
       <h3 className="text-sm font-medium text-muted-foreground">Azioni</h3>
@@ -279,30 +455,15 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       {/* Pulsanti azione */}
       {!azioneSelezionata && (
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="success"
-            size="sm"
-            onClick={() => handleSelectAzione("carico")}
-          >
+          <Button type="button" variant="success" size="sm" onClick={() => handleSelectAzione("carico")}>
             Carica Articolo
           </Button>
 
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={() => handleSelectAzione("scarico")}
-          >
+          <Button type="button" variant="destructive" size="sm" onClick={() => handleSelectAzione("scarico")}>
             Scarico Manuale
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => handleSelectAzione("intervento")}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => handleSelectAzione("intervento")}>
             Scarico Intervento
           </Button>
         </div>
@@ -310,6 +471,9 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
       {/* Form quantità */}
       {renderFormQuantita()}
+
+      {/* Modal selezione interventi */}
+      {renderModalInterventi()}
 
       {/* Messaggi feedback */}
       {messaggio && (
