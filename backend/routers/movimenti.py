@@ -12,6 +12,6 @@ logger = logging.getLogger("movimenti")
 
 router = APIRouter(prefix="/movimenti", tags=["movimenti"])
 
-router.post("/", response_model=MovimentoResponse)
-def aggiungi_movimento(db: Session, movimento: MovimentoCreate):
+@router.post("/", response_model=MovimentoResponse)
+def aggiungi_movimento(movimento: MovimentoCreate, db: Session = Depends(get_db_ricambi)):
     return crea_movimento(db, movimento)

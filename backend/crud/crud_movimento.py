@@ -5,7 +5,7 @@ from models import Articolo, Movimento
 def crea_movimento(db: Session, movimento: MovimentoCreate):
     db_movimento = Movimento(
         idarticolo = movimento.idarticolo,
-        qua = movimento.qta,
+        qta = movimento.qta,
         movimento = movimento.movimento,
         data = movimento.data,
         manuale = movimento.manuale,
