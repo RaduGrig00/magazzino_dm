@@ -2,10 +2,10 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import { apiFetch } from "../utils/auth";
 import type { Articolo, Intervento } from "../../types/types";
-import { FiPlus, FiMinus, FiTool, FiX, FiCalendar, FiUser, FiCheck, FiAlertCircle } from "react-icons/fi";
+import { FiPlus, FiMinus, FiTool, FiX, FiCalendar, FiUser, FiCheck, FiAlertCircle, FiPrinter } from "react-icons/fi";
 
 // === TYPES ===
-type TipoAzione = "carico" | "scarico" | "intervento";
+type TipoAzione = "carico" | "scarico" | "intervento" | "etichetta";
 
 interface AzioniArticoloProps {
   articolo: Articolo;
@@ -33,7 +33,7 @@ interface MovimentoPayload {
 }
 
 // === CONSTANTS ===
-const AZIONI_CONFIG: Record<Exclude<TipoAzione, "intervento">, { label: string; movimento: string }> = {
+const AZIONI_CONFIG: Record<Exclude<TipoAzione, "intervento" | "etichetta">, { label: string; movimento: string }> = {
   carico: { label: "Carica", movimento: "Carico Manuale" },
   scarico: { label: "Scarica", movimento: "Scarico Manuale" },
 };
@@ -116,7 +116,14 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   const [loadingInterventi, setLoadingInterventi] = useState(false);
   const [interventoSelezionato, setInterventoSelezionato] = useState<Intervento | null>(null);
 
+  // Stato per il modal stampa etichette
+  const [showModalEtichette, setShowModalEtichette] = useState(false);
+  const [quantitaEtichette, setQuantitaEtichette] = useState("1");
+  const [erroreEtichette, setErroreEtichette] = useState<string | null>(null);
+  const [loadingStampa, setLoadingStampa] = useState(false);
+
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputEtichetteRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Focus input quando si seleziona un'azione (non intervento modal)
@@ -135,6 +142,16 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     }
   }, [interventoSelezionato, azioneSelezionata]);
 
+  // Focus input quando si apre il modal etichette
+  useEffect(() => {
+    if (showModalEtichette) {
+      setTimeout(() => {
+        inputEtichetteRef.current?.focus();
+        inputEtichetteRef.current?.select();
+      }, 100);
+    }
+  }, [showModalEtichette]);
+
   // Cleanup abort controller on unmount
   useEffect(() => {
     return () => {
@@ -149,6 +166,9 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     setMessaggio(null);
     setInterventoSelezionato(null);
     setShowModalInterventi(false);
+    setShowModalEtichette(false);
+    setQuantitaEtichette("1");
+    setErroreEtichette(null);
   }, []);
 
   const caricaInterventi = useCallback(async () => {
@@ -179,6 +199,13 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       if (azione === "intervento") {
         setShowModalInterventi(true);
         caricaInterventi();
+        return;
+      }
+
+      if (azione === "etichetta") {
+        setShowModalEtichette(true);
+        setQuantitaEtichette("1");
+        setErroreEtichette(null);
         return;
       }
 
@@ -234,7 +261,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
       tipoMovimento = `Scarico magazzino - Rif. attività num. ${interventoSelezionato.codice} del ${dataFormattata}`;
       isCarico = false; // Scarico
     } else {
-      const config = AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento">];
+      const config = AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento" | "etichetta">];
       tipoMovimento = config.movimento;
       isCarico = azioneSelezionata === "carico";
     }
@@ -305,9 +332,84 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     [handleConferma, resetForm]
   );
 
+  // Gestione stampa etichette
+  const handleStampaEtichette = useCallback(async () => {
+    const validation = validateQuantita(quantitaEtichette);
+    if (!validation.valid || validation.parsed === undefined) {
+      setErroreEtichette(validation.error ?? "Errore di validazione");
+      inputEtichetteRef.current?.focus();
+      return;
+    }
+
+    if (!articolo?.codice) {
+      setMessaggio({ tipo: "error", testo: "Codice articolo non valido" });
+      setShowModalEtichette(false);
+      return;
+    }
+
+    setLoadingStampa(true);
+    setErroreEtichette(null);
+
+    try {
+      const payload = {
+        ricambi: [
+          {
+            codice: articolo.codice,
+            quantita: validation.parsed,
+          },
+        ],
+      };
+
+      const res = await apiFetch("/stampa-etichette/stampa-etichette", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Errore ${res.status}: ${res.statusText}`);
+      }
+
+      const result = await res.json();
+
+      if (result.totale_errori > 0) {
+        throw new Error(result.errori?.[0]?.errore || "Errore durante la stampa");
+      }
+
+      const qtaLabel = validation.parsed === 1 ? "etichetta" : "etichette";
+      setMessaggio({
+        tipo: "success",
+        testo: `${validation.parsed} ${qtaLabel} stampata/e con successo per ${articolo.codice}`,
+      });
+      setShowModalEtichette(false);
+      setQuantitaEtichette("1");
+    } catch (err) {
+      setErroreEtichette(err instanceof Error ? err.message : "Errore di connessione al server");
+    } finally {
+      setLoadingStampa(false);
+    }
+  }, [quantitaEtichette, articolo]);
+
+  const handleKeyDownEtichette = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleStampaEtichette();
+      } else if (e.key === "Escape") {
+        setShowModalEtichette(false);
+        setQuantitaEtichette("1");
+        setErroreEtichette(null);
+      }
+    },
+    [handleStampaEtichette]
+  );
+
   // Render form quantità
   const renderFormQuantita = () => {
     if (!azioneSelezionata) return null;
+
+    // L'azione etichetta usa un modal separato
+    if (azioneSelezionata === "etichetta") return null;
 
     // Per intervento, mostra il form solo se è stato selezionato un intervento
     if (azioneSelezionata === "intervento" && !interventoSelezionato) return null;
@@ -316,7 +418,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     const label =
       azioneSelezionata === "intervento"
         ? `Scarico per intervento #${interventoSelezionato?.codice}`
-        : AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento">].label + " articolo";
+        : AZIONI_CONFIG[azioneSelezionata as Exclude<TipoAzione, "intervento" | "etichetta">].label + " articolo";
 
     return (
       <div className={`p-4 rounded-xl border animate-fade-in ${
@@ -508,7 +610,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
       {/* Pulsanti azione */}
       {!azioneSelezionata && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <Button
             type="button"
             variant="success"
@@ -541,6 +643,17 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
           >
             Scarico Intervento
           </Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            onClick={() => handleSelectAzione("etichetta")}
+            className="w-full"
+            leftIcon={<FiPrinter className="w-4 h-4" />}
+          >
+            Stampa Etichetta
+          </Button>
         </div>
       )}
 
@@ -549,6 +662,112 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
       {/* Modal selezione interventi */}
       {renderModalInterventi()}
+
+      {/* Modal stampa etichette */}
+      {showModalEtichette && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => {
+            setShowModalEtichette(false);
+            setQuantitaEtichette("1");
+            setErroreEtichette(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col m-4 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-neutral-50 rounded-t-2xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-100 rounded-lg flex items-center justify-center">
+                  <FiPrinter className="w-5 h-5 text-brand-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Stampa Etichette</h2>
+                  <p className="text-xs text-muted-foreground">Codice: {articolo.codice}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModalEtichette(false);
+                  setQuantitaEtichette("1");
+                  setErroreEtichette(null);
+                }}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors"
+                aria-label="Chiudi"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-sm text-muted-foreground mb-1">Descrizione articolo:</p>
+                <p className="text-sm font-medium text-foreground">{articolo.descrizione || "N/D"}</p>
+              </div>
+
+              <div>
+                <label htmlFor="quantita-etichette" className="block text-sm font-medium text-foreground mb-2">
+                  Quantità etichette da stampare
+                </label>
+                <input
+                  ref={inputEtichetteRef}
+                  id="quantita-etichette"
+                  type="text"
+                  inputMode="numeric"
+                  value={quantitaEtichette}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === "" || /^[\d]*$/.test(value)) {
+                      setQuantitaEtichette(value);
+                      setErroreEtichette(null);
+                    }
+                  }}
+                  onKeyDown={handleKeyDownEtichette}
+                  placeholder="1"
+                  className={`w-full px-4 py-2.5 border rounded-lg text-sm bg-white
+                    focus:ring-2 focus:ring-offset-1 transition-all duration-200 outline-none
+                    ${erroreEtichette
+                      ? "border-destructive focus:ring-red-200"
+                      : "border-border focus:ring-brand-200 focus:border-brand-400"
+                    }`}
+                />
+                {erroreEtichette && <p className="mt-1 text-xs text-destructive">{erroreEtichette}</p>}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border bg-neutral-50 rounded-b-2xl flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowModalEtichette(false);
+                  setQuantitaEtichette("1");
+                  setErroreEtichette(null);
+                }}
+                className="flex-1"
+              >
+                Annulla
+              </Button>
+              <Button
+                type="button"
+                variant="success"
+                onClick={handleStampaEtichette}
+                loading={loadingStampa}
+                disabled={loadingStampa}
+                className="flex-1"
+                leftIcon={<FiPrinter className="w-4 h-4" />}
+              >
+                Stampa
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Messaggi feedback */}
       {messaggio && (
