@@ -8,6 +8,7 @@ from routers.articoli import router as articoli_router
 from routers.movimenti import router as movimenti_router
 from routers.interventi import router as interventi_router
 from routers.clienti import router as clienti_router
+from etichette_zebra import router as etichette_router
 
 
 @asynccontextmanager
@@ -71,3 +72,4 @@ app.include_router(articoli_router)
 app.include_router(movimenti_router)
 app.include_router(interventi_router)
 app.include_router(clienti_router)
+app.include_router(etichette_router)
