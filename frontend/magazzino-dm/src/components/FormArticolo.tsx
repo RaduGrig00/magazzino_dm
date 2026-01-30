@@ -4,7 +4,7 @@ import { apiFetch } from "../utils/auth";
 import type { Articolo } from "../../types/types.ts";
 import AzioniArticolo from "./AzioniArticolo";
 import { FiSearch, FiBox, FiAlertTriangle, FiCheckCircle, FiCamera, FiX } from "react-icons/fi";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 // Funzione per pulire il barcode (rimuove prefisso "1p" o "1P")
 const cleanBarcode = (barcode: string): string => {
@@ -143,15 +143,45 @@ export default function FormArticolo() {
     }
 
     try {
-      const html5QrCode = new Html5Qrcode("barcode-scanner");
+      // Formati barcode supportati - include tutti i formati comuni per magazzino
+      const formatsToSupport = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODE_93,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ];
+ 
+      const html5QrCode = new Html5Qrcode("barcode-scanner", {
+        formatsToSupport,
+        verbose: false,
+      });
       scannerRef.current = html5QrCode;
-
+ 
+      // Configurazione ottimizzata per iPhone e dispositivi mobili
+      const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number) => {
+        // Area di scansione proporzionale alla dimensione dello schermo
+        const minEdgePercentage = 0.8; // 80% della larghezza
+        const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+        const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+        return {
+          width: qrboxSize,
+          height: Math.floor(qrboxSize * 0.4), // Rettangolo più largo per barcode lineari
+        };
+      };
+ 
       await html5QrCode.start(
         { facingMode: "environment" },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 150 },
-          aspectRatio: 1.5,
+          fps: 15, // FPS più alto per scansione più reattiva
+          qrbox: qrboxFunction,
+          disableFlip: false, // Permette flip dell'immagine se necessario
         },
         (decodedText) => {
           // Barcode scansionato con successo
