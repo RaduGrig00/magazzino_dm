@@ -4,6 +4,7 @@ import { apiFetch } from "../utils/auth";
 import type { Articolo } from "../../types/types.ts";
 import AzioniArticolo from "./AzioniArticolo";
 import { FiSearch, FiBox, FiAlertTriangle, FiCheckCircle, FiCamera, FiX } from "react-icons/fi";
+import { HiOutlineLightBulb } from "react-icons/hi";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 // Funzione per pulire il barcode (rimuove prefisso "1p" o "1P")
@@ -15,26 +16,37 @@ const cleanBarcode = (barcode: string): string => {
   return trimmed;
 };
 
-// Hook per rilevare se siamo su mobile
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(false);
+// Hook per rilevare se siamo su mobile e il tipo di dispositivo
+const useDeviceInfo = () => {
+  const [deviceInfo, setDeviceInfo] = useState({
+    isMobile: false,
+    isAndroid: false,
+    isIOS: false,
+  });
 
   useEffect(() => {
-    const checkMobile = () => {
+    const checkDevice = () => {
       const userAgent = navigator.userAgent || navigator.vendor;
-      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(
-        userAgent.toLowerCase()
-      );
+      const ua = userAgent.toLowerCase();
+
+      const isAndroid = /android/i.test(ua);
+      const isIOS = /iphone|ipad|ipod/i.test(ua);
+      const isMobileDevice = isAndroid || isIOS || /webos|blackberry|iemobile|opera mini/i.test(ua);
       const isSmallScreen = window.innerWidth <= 768;
-      setIsMobile(isMobileDevice || isSmallScreen);
+
+      setDeviceInfo({
+        isMobile: isMobileDevice || isSmallScreen,
+        isAndroid,
+        isIOS,
+      });
     };
 
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    checkDevice();
+    window.addEventListener("resize", checkDevice);
+    return () => window.removeEventListener("resize", checkDevice);
   }, []);
 
-  return isMobile;
+  return deviceInfo;
 };
 
 export default function FormArticolo() {
@@ -44,13 +56,16 @@ export default function FormArticolo() {
   const [isLoading, setIsLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerError, setScannerError] = useState("");
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [flashSupported, setFlashSupported] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const barcodeBufferRef = useRef<string>("");
   const lastKeyTimeRef = useRef<number>(0);
 
-  const isMobile = useIsMobile();
+  const { isMobile, isAndroid } = useDeviceInfo();
 
   // Funzione di ricerca articolo
   const searchArticolo = useCallback(async (searchCode: string) => {
@@ -83,19 +98,15 @@ export default function FormArticolo() {
   }, []);
 
   // Listener globale per barcode scanner esterno
-  // I lettori barcode inviano caratteri molto rapidamente (< 50ms tra un carattere e l'altro)
-  // e terminano con Enter
   useEffect(() => {
-    const BARCODE_THRESHOLD_MS = 50; // Tempo massimo tra caratteri per considerarlo barcode scanner
-    const MIN_BARCODE_LENGTH = 3; // Lunghezza minima del barcode
+    const BARCODE_THRESHOLD_MS = 50;
+    const MIN_BARCODE_LENGTH = 3;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const now = Date.now();
       const timeSinceLastKey = now - lastKeyTimeRef.current;
 
-      // Se l'input è già focused, lascia il comportamento normale
       if (document.activeElement === inputRef.current) {
-        // Reset buffer se stiamo digitando manualmente
         if (timeSinceLastKey > BARCODE_THRESHOLD_MS) {
           barcodeBufferRef.current = "";
         }
@@ -103,23 +114,19 @@ export default function FormArticolo() {
         return;
       }
 
-      // Rileva input da barcode scanner (caratteri rapidi)
       if (timeSinceLastKey > BARCODE_THRESHOLD_MS) {
-        // Nuovo potenziale barcode, reset buffer
         barcodeBufferRef.current = "";
       }
 
       lastKeyTimeRef.current = now;
 
       if (e.key === "Enter") {
-        // Fine scansione barcode
         if (barcodeBufferRef.current.length >= MIN_BARCODE_LENGTH) {
           e.preventDefault();
           searchArticolo(barcodeBufferRef.current);
         }
         barcodeBufferRef.current = "";
       } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        // Accumula caratteri nel buffer
         barcodeBufferRef.current += e.key;
       }
     };
@@ -128,12 +135,33 @@ export default function FormArticolo() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [searchArticolo]);
 
+  // Toggle flash/torch
+  const toggleFlash = useCallback(async () => {
+    if (!videoTrackRef.current) return;
+
+    try {
+      const capabilities = videoTrackRef.current.getCapabilities?.();
+      if (!capabilities || !('torch' in capabilities)) {
+        return;
+      }
+
+      const newFlashState = !flashEnabled;
+      await videoTrackRef.current.applyConstraints({
+        advanced: [{ torch: newFlashState } as MediaTrackConstraintSet]
+      });
+      setFlashEnabled(newFlashState);
+    } catch (err) {
+      console.error("Errore nel toggle del flash:", err);
+    }
+  }, [flashEnabled]);
+
   // Gestione scanner fotocamera
   const startScanner = useCallback(async () => {
     setScannerError("");
     setShowScanner(true);
+    setFlashEnabled(false);
+    setFlashSupported(false);
 
-    // Aspetta che il DOM sia pronto
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const scannerElement = document.getElementById("barcode-scanner");
@@ -143,7 +171,6 @@ export default function FormArticolo() {
     }
 
     try {
-      // Formati barcode supportati - include tutti i formati comuni per magazzino
       const formatsToSupport = [
         Html5QrcodeSupportedFormats.CODE_128,
         Html5QrcodeSupportedFormats.CODE_39,
@@ -157,41 +184,77 @@ export default function FormArticolo() {
         Html5QrcodeSupportedFormats.DATA_MATRIX,
         Html5QrcodeSupportedFormats.QR_CODE,
       ];
- 
+
       const html5QrCode = new Html5Qrcode("barcode-scanner", {
         formatsToSupport,
         verbose: false,
       });
       scannerRef.current = html5QrCode;
- 
-      // Configurazione ottimizzata per iPhone e dispositivi mobili
+
+      // Configurazione ottimizzata per dispositivo
       const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number) => {
-        // Area di scansione proporzionale alla dimensione dello schermo
-        const minEdgePercentage = 0.8; // 80% della larghezza
+        const minEdgePercentage = isAndroid ? 0.85 : 0.8;
         const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
         const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
         return {
           width: qrboxSize,
-          height: Math.floor(qrboxSize * 0.4), // Rettangolo più largo per barcode lineari
+          height: Math.floor(qrboxSize * (isAndroid ? 0.35 : 0.4)),
         };
       };
- 
+
+      // Configurazione fotocamera ottimizzata per Android
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cameraConfig: MediaTrackConstraints & Record<string, any> = {
+        facingMode: "environment",
+      };
+
+      // Su Android, richiediamo esplicitamente una risoluzione alta per migliorare la scansione
+      if (isAndroid) {
+        cameraConfig.width = { ideal: 1920 };
+        cameraConfig.height = { ideal: 1080 };
+        // focusMode è supportato su molti dispositivi Android ma non è parte dello standard TS
+        cameraConfig.focusMode = "continuous";
+      }
+
       await html5QrCode.start(
-        { facingMode: "environment" },
+        cameraConfig,
         {
-          fps: 15, // FPS più alto per scansione più reattiva
+          fps: isAndroid ? 10 : 15, // FPS leggermente più basso su Android per stabilità
           qrbox: qrboxFunction,
-          disableFlip: false, // Permette flip dell'immagine se necessario
+          disableFlip: false,
+          aspectRatio: isAndroid ? 16 / 9 : 4 / 3,
         },
         (decodedText) => {
-          // Barcode scansionato con successo
           stopScanner();
           searchArticolo(decodedText);
         },
         () => {
-          // Errore di scansione (ignorato, continua a scansionare)
+          // Continua a scansionare
         }
       );
+
+      // Ottieni il video track per il controllo del flash
+      setTimeout(async () => {
+        try {
+          const videoElement = scannerElement.querySelector("video");
+          if (videoElement && videoElement.srcObject) {
+            const stream = videoElement.srcObject as MediaStream;
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack) {
+              videoTrackRef.current = videoTrack;
+
+              // Verifica se il flash è supportato
+              const capabilities = videoTrack.getCapabilities?.();
+              if (capabilities && 'torch' in capabilities) {
+                setFlashSupported(true);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Errore nell'ottenere il video track:", err);
+        }
+      }, 500);
+
     } catch (err) {
       setScannerError(
         err instanceof Error
@@ -199,14 +262,26 @@ export default function FormArticolo() {
           : "Errore nell'avvio della fotocamera. Verifica i permessi."
       );
     }
-  }, [searchArticolo]);
+  }, [searchArticolo, isAndroid]);
 
   const stopScanner = useCallback(() => {
+    // Disabilita il flash prima di fermare
+    if (flashEnabled && videoTrackRef.current) {
+      try {
+        videoTrackRef.current.applyConstraints({
+          advanced: [{ torch: false } as MediaTrackConstraintSet]
+        });
+      } catch {
+        // Ignora errori
+      }
+    }
+
     if (scannerRef.current) {
       scannerRef.current
         .stop()
         .then(() => {
           scannerRef.current = null;
+          videoTrackRef.current = null;
         })
         .catch(() => {
           // Ignora errori di stop
@@ -214,7 +289,9 @@ export default function FormArticolo() {
     }
     setShowScanner(false);
     setScannerError("");
-  }, []);
+    setFlashEnabled(false);
+    setFlashSupported(false);
+  }, [flashEnabled]);
 
   // Cleanup scanner on unmount
   useEffect(() => {
@@ -316,14 +393,31 @@ export default function FormArticolo() {
                   <p className="text-xs text-muted-foreground">Inquadra il codice a barre</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={stopScanner}
-                className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors"
-                aria-label="Chiudi"
-              >
-                <FiX className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Pulsante Flash */}
+                {flashSupported && (
+                  <button
+                    type="button"
+                    onClick={toggleFlash}
+                    className={`p-2 rounded-lg transition-colors ${
+                      flashEnabled
+                        ? "text-yellow-500 bg-yellow-50 hover:bg-yellow-100"
+                        : "text-muted-foreground hover:text-foreground hover:bg-neutral-100"
+                    }`}
+                    aria-label={flashEnabled ? "Disattiva flash" : "Attiva flash"}
+                  >
+                    <HiOutlineLightBulb className="w-5 h-5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={stopScanner}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors"
+                  aria-label="Chiudi"
+                >
+                  <FiX className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Scanner Area */}
@@ -336,6 +430,12 @@ export default function FormArticolo() {
                 <div className="mt-4 p-3 bg-destructive-muted border border-red-200 rounded-lg">
                   <p className="text-destructive text-sm">{scannerError}</p>
                 </div>
+              )}
+              {/* Indicazione flash su Android */}
+              {isAndroid && flashSupported && (
+                <p className="mt-2 text-xs text-center text-muted-foreground">
+                  Tocca la lampadina per attivare il flash
+                </p>
               )}
             </div>
 
