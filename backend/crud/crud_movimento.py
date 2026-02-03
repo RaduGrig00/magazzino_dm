@@ -1,8 +1,13 @@
 from sqlalchemy.orm import Session
-from schemas import ArticoloUpdate, MovimentoCreate
-from models import Articolo, Movimento
+from schemas import MovimentoCreate
+from models import Movimento
+
 
 def crea_movimento(db: Session, movimento: MovimentoCreate):
+    """
+    Crea un nuovo movimento (senza commit).
+    Il commit deve essere gestito dal chiamante per garantire atomicità.
+    """
     db_movimento = Movimento(
         idarticolo = movimento.idarticolo,
         qta = movimento.qta,
@@ -19,7 +24,4 @@ def crea_movimento(db: Session, movimento: MovimentoCreate):
     )
 
     db.add(db_movimento)
-    db.commit()
-    db.refresh(db_movimento)
-
     return db_movimento
