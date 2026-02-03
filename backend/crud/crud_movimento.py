@@ -19,7 +19,5 @@ def crea_movimento(db: Session, movimento: MovimentoCreate):
     )
 
     db.add(db_movimento)
-    db.commit()
-    db.refresh(db_movimento)
 
     return db_movimento

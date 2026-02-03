@@ -3,19 +3,18 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch } from "../utils/auth";
 import type { Articolo } from "../../types/types.ts";
 import AzioniArticolo from "./AzioniArticolo";
-import { FiSearch, FiBox, FiAlertTriangle, FiCheckCircle, FiCamera, FiX } from "react-icons/fi";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { FiSearch, FiBox, FiAlertTriangle, FiCheckCircle, FiCamera, FiX, FiZap, FiZapOff } from "react-icons/fi";
+import { BrowserMultiFormatReader } from "@zxing/library";
 
-// Funzione per pulire il barcode (rimuove prefisso "1p" o "1P")
+// URL beep
+const BEEP_SOUND = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg";
+
 const cleanBarcode = (barcode: string): string => {
   const trimmed = barcode.trim();
-  if (trimmed.toLowerCase().startsWith("1p")) {
-    return trimmed.slice(2);
-  }
+  if (trimmed.toLowerCase().startsWith("1p")) return trimmed.slice(2);
   return trimmed;
 };
 
-// Hook per rilevare se siamo su mobile
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -42,17 +41,24 @@ export default function FormArticolo() {
   const [codice, setCodice] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // Scanner states
   const [showScanner, setShowScanner] = useState(false);
   const [scannerError, setScannerError] = useState("");
+  const [isFlashAvailable, setIsFlashAvailable] = useState(false);
+  const [isFlashOn, setIsFlashOn] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+
   const barcodeBufferRef = useRef<string>("");
   const lastKeyTimeRef = useRef<number>(0);
 
   const isMobile = useIsMobile();
 
-  // Funzione di ricerca articolo
+  // --- LOGICA RICERCA ---
   const searchArticolo = useCallback(async (searchCode: string) => {
     const cleanedCode = cleanBarcode(searchCode);
     if (!cleanedCode) return;
@@ -63,17 +69,13 @@ export default function FormArticolo() {
     setCodice(cleanedCode);
 
     try {
-      const res = await apiFetch(`/articoli/${cleanedCode}`, {
-        method: "GET",
-      });
-
+      const res = await apiFetch(`/articoli/${cleanedCode}`, { method: "GET" });
       const data = await res.json();
 
       if (!res.ok) {
         setError(data.detail || "Errore durante la ricerca");
         return;
       }
-
       setArticolo(data);
     } catch {
       setError("Errore di connessione al server");
@@ -82,44 +84,31 @@ export default function FormArticolo() {
     }
   }, []);
 
-  // Listener globale per barcode scanner esterno
-  // I lettori barcode inviano caratteri molto rapidamente (< 50ms tra un carattere e l'altro)
-  // e terminano con Enter
+  // --- LOGICA BARCODE SCANNER USB ---
   useEffect(() => {
-    const BARCODE_THRESHOLD_MS = 50; // Tempo massimo tra caratteri per considerarlo barcode scanner
-    const MIN_BARCODE_LENGTH = 3; // Lunghezza minima del barcode
+    const BARCODE_THRESHOLD_MS = 50;
+    const MIN_BARCODE_LENGTH = 3;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const now = Date.now();
       const timeSinceLastKey = now - lastKeyTimeRef.current;
 
-      // Se l'input è già focused, lascia il comportamento normale
       if (document.activeElement === inputRef.current) {
-        // Reset buffer se stiamo digitando manualmente
-        if (timeSinceLastKey > BARCODE_THRESHOLD_MS) {
-          barcodeBufferRef.current = "";
-        }
+        if (timeSinceLastKey > BARCODE_THRESHOLD_MS) barcodeBufferRef.current = "";
         lastKeyTimeRef.current = now;
         return;
       }
 
-      // Rileva input da barcode scanner (caratteri rapidi)
-      if (timeSinceLastKey > BARCODE_THRESHOLD_MS) {
-        // Nuovo potenziale barcode, reset buffer
-        barcodeBufferRef.current = "";
-      }
-
+      if (timeSinceLastKey > BARCODE_THRESHOLD_MS) barcodeBufferRef.current = "";
       lastKeyTimeRef.current = now;
 
       if (e.key === "Enter") {
-        // Fine scansione barcode
         if (barcodeBufferRef.current.length >= MIN_BARCODE_LENGTH) {
           e.preventDefault();
           searchArticolo(barcodeBufferRef.current);
         }
         barcodeBufferRef.current = "";
       } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        // Accumula caratteri nel buffer
         barcodeBufferRef.current += e.key;
       }
     };
@@ -128,102 +117,86 @@ export default function FormArticolo() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [searchArticolo]);
 
-  // Gestione scanner fotocamera
+  // --- LOGICA SCANNER FOTOCAMERA ---
+  const toggleFlash = async () => {
+    if (trackRef.current && isFlashAvailable) {
+      try {
+        await trackRef.current.applyConstraints({ advanced: [{ torch: !isFlashOn } as any] });
+        setIsFlashOn((prev) => !prev);
+      } catch (err) {
+        console.error("Errore cambio flash:", err);
+      }
+    }
+  };
+
+  const stopScanner = useCallback(() => {
+    if (codeReaderRef.current) {
+      codeReaderRef.current.reset();
+      codeReaderRef.current = null;
+    }
+    if (trackRef.current) {
+      trackRef.current.stop();
+      trackRef.current = null;
+    }
+    setShowScanner(false);
+    setIsFlashOn(false);
+    setScannerError("");
+  }, []);
+
   const startScanner = useCallback(async () => {
     setScannerError("");
     setShowScanner(true);
+    setIsFlashOn(false);
+    setIsFlashAvailable(false);
 
-    // Aspetta che il DOM sia pronto
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((res) => setTimeout(res, 100));
 
-    const scannerElement = document.getElementById("barcode-scanner");
-    if (!scannerElement) {
-      setScannerError("Errore: elemento scanner non trovato");
+    if (!videoRef.current) {
+      setScannerError("Elemento video non trovato");
       return;
     }
 
+    const codeReader = new BrowserMultiFormatReader();
+    codeReaderRef.current = codeReader;
+
     try {
-      // Formati barcode supportati - include tutti i formati comuni per magazzino
-      const formatsToSupport = [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODE_93,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.CODABAR,
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-        Html5QrcodeSupportedFormats.QR_CODE,
-      ];
- 
-      const html5QrCode = new Html5Qrcode("barcode-scanner", {
-        formatsToSupport,
-        verbose: false,
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 10 } },
       });
-      scannerRef.current = html5QrCode;
- 
-      // Configurazione ottimizzata per iPhone e dispositivi mobili
-      const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number) => {
-        // Area di scansione proporzionale alla dimensione dello schermo
-        const minEdgePercentage = 0.8; // 80% della larghezza
-        const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-        const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
-        return {
-          width: qrboxSize,
-          height: Math.floor(qrboxSize * 0.4), // Rettangolo più largo per barcode lineari
-        };
-      };
- 
-      await html5QrCode.start(
-        { facingMode: "environment" },
-        {
-          fps: 15, // FPS più alto per scansione più reattiva
-          qrbox: qrboxFunction,
-          disableFlip: false, // Permette flip dell'immagine se necessario
-        },
-        (decodedText) => {
-          // Barcode scansionato con successo
-          stopScanner();
-          searchArticolo(decodedText);
-        },
-        () => {
-          // Errore di scansione (ignorato, continua a scansionare)
-        }
-      );
-    } catch (err) {
-      setScannerError(
-        err instanceof Error
-          ? err.message
-          : "Errore nell'avvio della fotocamera. Verifica i permessi."
-      );
-    }
-  }, [searchArticolo]);
+      videoRef.current!.srcObject = stream;
+      const track = stream.getVideoTracks()[0];
+      trackRef.current = track;
 
-  const stopScanner = useCallback(() => {
-    if (scannerRef.current) {
-      scannerRef.current
-        .stop()
-        .then(() => {
-          scannerRef.current = null;
+      // Controllo torch
+      const capabilities = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+      if (capabilities?.torch) setIsFlashAvailable(true);
+
+      // Decodifica video
+      if (!videoRef.current) throw new Error("Elemento video non trovato");
+
+      codeReader
+        .decodeFromVideoElementContinuously(videoRef.current, (result: any) => {
+          if (result) {
+            const audio = new Audio(BEEP_SOUND);
+            audio.play().catch(() => {});
+            stopScanner();
+            const cleaned = cleanBarcode(result.getText());
+            searchArticolo(cleaned);
+          }
         })
-        .catch(() => {
-          // Ignora errori di stop
+        .catch((err) => {
+          console.error(err);
+          setScannerError("Errore durante la scansione");
         });
-    }
-    setShowScanner(false);
-    setScannerError("");
-  }, []);
 
-  // Cleanup scanner on unmount
+    } catch (err) {
+      setScannerError(err instanceof Error ? err.message : "Errore avvio fotocamera");
+    }
+  }, [stopScanner, searchArticolo]);
+
   useEffect(() => {
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-      }
-    };
-  }, []);
+    return () => stopScanner();
+  }, [stopScanner]);
 
   const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -260,25 +233,17 @@ export default function FormArticolo() {
                     ${isMobile ? "pr-14" : "pr-4"}`}
                   required
                 />
-                {/* Pulsante fotocamera per mobile */}
                 {isMobile && (
                   <button
                     type="button"
                     onClick={startScanner}
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                    aria-label="Scansiona con fotocamera"
                   >
                     <FiCamera className="w-5 h-5" />
                   </button>
                 )}
               </div>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                loading={isLoading}
-                size="lg"
-                className="sm:w-auto w-full"
-              >
+              <Button type="submit" disabled={isLoading} loading={isLoading} size="lg" className="sm:w-auto w-full">
                 {isLoading ? "Ricerca..." : "Cerca"}
               </Button>
             </div>
@@ -316,22 +281,27 @@ export default function FormArticolo() {
                   <p className="text-xs text-muted-foreground">Inquadra il codice a barre</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={stopScanner}
-                className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors"
-                aria-label="Chiudi"
-              >
+              <button type="button" onClick={stopScanner} className="p-2 text-muted-foreground hover:text-foreground hover:bg-neutral-100 rounded-lg transition-colors">
                 <FiX className="w-5 h-5" />
               </button>
             </div>
 
             {/* Scanner Area */}
-            <div className="p-4">
-              <div
-                id="barcode-scanner"
-                className="w-full aspect-[4/3] bg-neutral-900 rounded-xl overflow-hidden"
-              />
+            <div className="p-4 relative bg-black">
+              <video ref={videoRef} className="w-full aspect-[4/3] bg-neutral-900 rounded-xl object-cover" autoPlay muted />
+
+              {isFlashAvailable && (
+                <button
+                  type="button"
+                  onClick={toggleFlash}
+                  className={`absolute bottom-6 right-6 p-3 rounded-full shadow-lg transition-all z-10 border border-white/20 ${
+                    isFlashOn ? "bg-yellow-400 text-black hover:bg-yellow-500" : "bg-black/50 text-white hover:bg-black/70 backdrop-blur-md"
+                  }`}
+                >
+                  {isFlashOn ? <FiZapOff className="w-6 h-6" /> : <FiZap className="w-6 h-6" />}
+                </button>
+              )}
+
               {scannerError && (
                 <div className="mt-4 p-3 bg-destructive-muted border border-red-200 rounded-lg">
                   <p className="text-destructive text-sm">{scannerError}</p>
@@ -352,7 +322,6 @@ export default function FormArticolo() {
       {/* Article Result */}
       {articolo && (
         <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden animate-slide-up">
-          {/* Header */}
           <div className="px-6 py-4 border-b border-border bg-neutral-50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -381,17 +350,13 @@ export default function FormArticolo() {
             </div>
           </div>
 
-          {/* Body */}
           <div className="p-6">
-            {/* Stats Grid */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="p-4 bg-neutral-50 rounded-xl">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
                   Quantità disponibile
                 </p>
-                <p className={`text-2xl font-bold ${
-                  articolo.qta <= articolo.threshold_qta ? "text-amber-600" : "text-brand-600"
-                }`}>
+                <p className={`text-2xl font-bold ${articolo.qta <= articolo.threshold_qta ? "text-amber-600" : "text-brand-600"}`}>
                   {Math.trunc(articolo.qta)}
                 </p>
               </div>
@@ -399,13 +364,10 @@ export default function FormArticolo() {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
                   Soglia minima
                 </p>
-                <p className="text-2xl font-bold text-foreground">
-                  {Math.trunc(articolo.threshold_qta)}
-                </p>
+                <p className="text-2xl font-bold text-foreground">{Math.trunc(articolo.threshold_qta)}</p>
               </div>
             </div>
 
-            {/* Additional Info */}
             {(articolo.barcode || articolo.note) && (
               <div className="space-y-3 mb-6 p-4 bg-neutral-50 rounded-xl">
                 {articolo.barcode && (
@@ -423,7 +385,6 @@ export default function FormArticolo() {
               </div>
             )}
 
-            {/* Actions */}
             <AzioniArticolo articolo={articolo} />
           </div>
         </div>

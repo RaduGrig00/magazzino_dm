@@ -1,11 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from routers.auth import get_current_user
 from schemas import ArticoloResponse, ArticoloUpdate
 from typing import List
-from config import get_db_ricambi
-from crud.crud_articolo import get_articolo_by_barcode
+from config import get_db, get_db_ricambi
+from crud.crud_articolo import get_articolo_by_barcode, put_qta_articolo
 
 logger = logging.getLogger("articoli")
 
@@ -21,4 +21,7 @@ def read_articolo_by_barcode(barcode: str, db: Session = Depends(get_db_ricambi)
     
     return articolo
 
-    
+@router.put("/aggiorna-qta/{barcode}", response_model=ArticoloUpdate)
+def aggiorna_qta_articolo(codice: str, qta: int = Query(...), db: Session = Depends(get_db)):
+    """PUT di un articolo specifico tramite codice/barcode"""
+    return put_qta_articolo(db, codice, qta)
