@@ -6,6 +6,7 @@ export interface Articolo {
   threshold_qta: number;
   prezzo_acquisto?: number;
   prezzo_vendita?: number;
+  ubicazione?: string;
   marca?: string;
   categoria?: string;
   barcode?: string;

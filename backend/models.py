@@ -14,6 +14,7 @@ class Articolo(Base):
     threshold_qta = Column(Numeric(15, 6), nullable=False)
     prezzo_acquisto = Column(Float)
     prezzo_vendita = Column(Float)
+    ubicazione = Column(String)
     barcode = Column(String(50))
     note = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

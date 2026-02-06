@@ -122,6 +122,8 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   const [erroreEtichette, setErroreEtichette] = useState<string | null>(null);
   const [loadingStampa, setLoadingStampa] = useState(false);
 
+  const [stampanteSelezionata, setStampanteSelezionata] = useState<"LAB" | "Magazzino">("Magazzino");
+
   const inputRef = useRef<HTMLInputElement>(null);
   const inputEtichetteRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -358,6 +360,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
             quantita: validation.parsed,
           },
         ],
+        stampante: stampanteSelezionata
       };
 
       const res = await apiFetch("/stampa-etichette/stampa-etichette", {
@@ -707,6 +710,43 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
               <div className="mb-4">
                 <p className="text-sm text-muted-foreground mb-1">Descrizione articolo:</p>
                 <p className="text-sm font-medium text-foreground">{articolo.descrizione || "N/D"}</p>
+              </div>
+               {/*BLOCCO SELEZIONE STAMPANTE */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Seleziona Stampante
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStampanteSelezionata("LAB")}
+                    className={`px-4 py-2.5 rounded-lg text-sm border transition-all ${
+                      stampanteSelezionata === "LAB"
+                        ? "bg-brand-50 border-brand-500 text-brand-700 ring-1 ring-brand-500"
+                        : "bg-white border-border text-muted-foreground hover:bg-neutral-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <FiPrinter className="w-4 h-4" />
+                      <span>Laboratorio</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStampanteSelezionata("Magazzino")}
+                    className={`px-4 py-2.5 rounded-lg text-sm border transition-all ${
+                      stampanteSelezionata === "Magazzino"
+                        ? "bg-brand-50 border-brand-500 text-brand-700 ring-1 ring-brand-500"
+                        : "bg-white border-border text-muted-foreground hover:bg-neutral-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <FiTool className="w-4 h-4" /> {/* O un'altra icona tipo FiBox */}
+                      <span>Magazzino</span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <div>

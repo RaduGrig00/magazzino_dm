@@ -368,7 +368,7 @@ export default function FormArticolo() {
               </div>
             </div>
 
-            {(articolo.barcode || articolo.note) && (
+            {(articolo.barcode || articolo.note || articolo.ubicazione) && (
               <div className="space-y-3 mb-6 p-4 bg-neutral-50 rounded-xl">
                 {articolo.barcode && (
                   <div className="flex justify-between items-center text-sm">
@@ -380,6 +380,12 @@ export default function FormArticolo() {
                   <div className="text-sm">
                     <span className="text-muted-foreground block mb-1">Note</span>
                     <span className="text-foreground">{articolo.note}</span>
+                  </div>
+                )}
+                {articolo.ubicazione && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground block mb-1">Ubicazione</span>
+                    <span className="text-foreground">{articolo.ubicazione}</span>
                   </div>
                 )}
               </div>

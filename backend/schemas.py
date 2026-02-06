@@ -11,6 +11,7 @@ class ArticoloCreate(BaseModel):
     threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float] = None
     prezzo_vendita: Optional[float] = None
+    ubicazione: Optional[str] = None
     barcode: Optional[str] = None
     note: Optional[str] = None
 
@@ -20,6 +21,7 @@ class ArticoloUpdate(BaseModel):
     threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float] = None
     prezzo_vendita: Optional[float] = None
+    ubicazione: Optional[str] = None
     barcode: Optional[str] = None
     note: Optional[str] = None
 
@@ -31,6 +33,7 @@ class ArticoloResponse(BaseModel):
     threshold_qta: Optional[Decimal] = None
     prezzo_acquisto: Optional[float]
     prezzo_vendita: Optional[float]
+    ubicazione: Optional[str] = None
     barcode: Optional[str]
     note: Optional[str]
     created_at: Optional[datetime]
