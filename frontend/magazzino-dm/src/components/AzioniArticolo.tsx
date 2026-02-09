@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import { apiFetch } from "../utils/auth";
-import type { Articolo, Intervento } from "../../types/types";
+import type { Articolo, Intervento, Messaggio } from "../../types/types";
 import { FiPlus, FiMinus, FiTool, FiX, FiCalendar, FiUser, FiCheck, FiAlertCircle, FiPrinter } from "react-icons/fi";
+import { quantitaSchema } from "../schemas/quantita.schema";
 
 // === TYPES ===
 type TipoAzione = "carico" | "scarico" | "intervento" | "etichetta";
@@ -10,11 +11,6 @@ type TipoAzione = "carico" | "scarico" | "intervento" | "etichetta";
 interface AzioniArticoloProps {
   articolo: Articolo;
   onMovimentoCreato?: () => void;
-}
-
-interface Messaggio {
-  tipo: "success" | "error";
-  testo: string;
 }
 
 interface MovimentoPayload {
@@ -36,34 +32,6 @@ interface MovimentoPayload {
 const AZIONI_CONFIG: Record<Exclude<TipoAzione, "intervento" | "etichetta">, { label: string; movimento: string }> = {
   carico: { label: "Carica", movimento: "Carico Manuale" },
   scarico: { label: "Scarica", movimento: "Scarico Manuale" },
-};
-
-const QTA_MIN = 1;
-const QTA_MAX = 99999;
-
-// === VALIDATION ===
-const validateQuantita = (value: string): { valid: boolean; error?: string; parsed?: number } => {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return { valid: false, error: "Inserisci una quantità" };
-  }
-
-  const parsed = parseFloat(trimmed.replace(",", "."));
-
-  if (isNaN(parsed)) {
-    return { valid: false, error: "Inserisci un numero valido" };
-  }
-
-  if (parsed < QTA_MIN) {
-    return { valid: false, error: `La quantità deve essere almeno ${QTA_MIN}` };
-  }
-
-  if (parsed > QTA_MAX) {
-    return { valid: false, error: `La quantità non può superare ${QTA_MAX}` };
-  }
-
-  return { valid: true, parsed };
 };
 
 const buildPayload = (
@@ -121,6 +89,8 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
   const [quantitaEtichette, setQuantitaEtichette] = useState("1");
   const [erroreEtichette, setErroreEtichette] = useState<string | null>(null);
   const [loadingStampa, setLoadingStampa] = useState(false);
+
+  const [stampanteSelezionata, setStampanteSelezionata] = useState<"LAB" | "Magazzino">("Magazzino");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const inputEtichetteRef = useRef<HTMLInputElement>(null);
@@ -239,12 +209,16 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
     }
 
     // Validazione quantità
-    const validation = validateQuantita(quantita);
-    if (!validation.valid || validation.parsed === undefined) {
-      setErroreQuantita(validation.error ?? "Errore di validazione");
+    const result = quantitaSchema.safeParse(quantita);
+
+    if  (!result.success) {
+      setErroreQuantita(result.error.issues[0].message);
       inputRef.current?.focus();
       return;
     }
+    
+    const parsedQuantita = result.data;
+    
 
     // Validazione articolo
     if (!articolo?.id || typeof articolo.id !== "number") {
@@ -268,7 +242,7 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
     const payload = buildPayload(
       articolo.id,
-      validation.parsed,
+      parsedQuantita,
       tipoMovimento,
       isCarico,
       azioneSelezionata === "intervento" ? interventoSelezionato : null
@@ -293,11 +267,11 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
         throw new Error(data.detail || `Errore ${res.status}: ${res.statusText}`);
       }
 
-      const qtaLabel = validation.parsed === 1 ? "unità" : "unità";
+      const qtaLabel = parsedQuantita === 1 ? "unità" : "unità";
       const successMessage =
         azioneSelezionata === "intervento" && interventoSelezionato
-          ? `Scarico di ${validation.parsed} ${qtaLabel} per intervento ${interventoSelezionato.codice} eseguito`
-          : `${tipoMovimento} di ${validation.parsed} ${qtaLabel} eseguito con successo`;
+          ? `Scarico di ${parsedQuantita} ${qtaLabel} per intervento ${interventoSelezionato.codice} eseguito`
+          : `${tipoMovimento} di ${parsedQuantita} ${qtaLabel} eseguito con successo`;
 
       setMessaggio({
         tipo: "success",
@@ -334,12 +308,16 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
 
   // Gestione stampa etichette
   const handleStampaEtichette = useCallback(async () => {
-    const validation = validateQuantita(quantitaEtichette);
-    if (!validation.valid || validation.parsed === undefined) {
-      setErroreEtichette(validation.error ?? "Errore di validazione");
+    const result = quantitaSchema.safeParse(quantitaEtichette);
+
+    if (!result.success) {
+      setErroreEtichette(result.error.issues[0].message);
       inputEtichetteRef.current?.focus();
       return;
     }
+
+    const quantitaParsed = result.data;
+    
 
     if (!articolo?.codice) {
       setMessaggio({ tipo: "error", testo: "Codice articolo non valido" });
@@ -355,12 +333,13 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
         ricambi: [
           {
             codice: articolo.codice,
-            quantita: validation.parsed,
+            quantita: quantitaParsed,
           },
         ],
+        stampante: stampanteSelezionata
       };
 
-      const res = await apiFetch("/stampa-etichette/stampa-etichette", {
+      const res = await apiFetch("/stampa-etichette", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -376,10 +355,10 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
         throw new Error(result.errori?.[0]?.errore || "Errore durante la stampa");
       }
 
-      const qtaLabel = validation.parsed === 1 ? "etichetta" : "etichette";
+      const qtaLabel = quantitaParsed === 1 ? "etichetta" : "etichette";
       setMessaggio({
         tipo: "success",
-        testo: `${validation.parsed} ${qtaLabel} stampata/e con successo per ${articolo.codice}`,
+        testo: `${quantitaParsed} ${qtaLabel} stampata/e con successo per ${articolo.codice}`,
       });
       setShowModalEtichette(false);
       setQuantitaEtichette("1");
@@ -707,6 +686,43 @@ export default function AzioniArticolo({ articolo, onMovimentoCreato }: AzioniAr
               <div className="mb-4">
                 <p className="text-sm text-muted-foreground mb-1">Descrizione articolo:</p>
                 <p className="text-sm font-medium text-foreground">{articolo.descrizione || "N/D"}</p>
+              </div>
+               {/*BLOCCO SELEZIONE STAMPANTE */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Seleziona Stampante
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStampanteSelezionata("LAB")}
+                    className={`px-4 py-2.5 rounded-lg text-sm border transition-all ${
+                      stampanteSelezionata === "LAB"
+                        ? "bg-brand-50 border-brand-500 text-brand-700 ring-1 ring-brand-500"
+                        : "bg-white border-border text-muted-foreground hover:bg-neutral-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <FiPrinter className="w-4 h-4" />
+                      <span>Laboratorio</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStampanteSelezionata("Magazzino")}
+                    className={`px-4 py-2.5 rounded-lg text-sm border transition-all ${
+                      stampanteSelezionata === "Magazzino"
+                        ? "bg-brand-50 border-brand-500 text-brand-700 ring-1 ring-brand-500"
+                        : "bg-white border-border text-muted-foreground hover:bg-neutral-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <FiTool className="w-4 h-4" /> {/* O un'altra icona tipo FiBox */}
+                      <span>Magazzino</span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <div>

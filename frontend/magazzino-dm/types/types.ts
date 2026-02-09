@@ -23,3 +23,8 @@ export interface Intervento {
   idanagrafica: number;
   ragione_sociale?: string;
 }
+
+export interface Messaggio {
+  tipo: "success" | "error";
+  testo: string;
+}
