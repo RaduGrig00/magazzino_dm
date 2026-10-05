@@ -1,4 +1,42 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+*
+# --- Segreti / variabili d'ambiente ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ---
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Database locali ---
 local.db
+*.db
+*.sqlite3
+
+# --- Node / Vite ---
+node_modules/
+dist/
+*.local
+npm-debug.log*
+
+# --- Android / Capacitor (per il futuro) ---
+*.apk
+*.aab
+*.jks
+*.keystore
+local.properties
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
